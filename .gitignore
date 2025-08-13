@@ -1,0 +1,6 @@
+*__pycache__
+data
+data_yolo
+*.pt
+*.onnx
+*.rknn
