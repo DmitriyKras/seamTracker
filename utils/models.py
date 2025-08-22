@@ -2,6 +2,21 @@ import torch
 from torch import nn
 from torchvision import models
 import torch.nn.functional as F
+import timm
+from timm.layers import Mlp
+
+
+class SeamRegressorTIMM(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.backbone = timm.create_model('timm/mobilenetv3_small_100.lamb_in1k', pretrained=True, num_classes=0, 
+                                          in_chans=in_channels)
+        self.mlp = Mlp(1024, 256, out_channels)
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.mlp(x)
+        return x
 
 
 class SeamRegressor(nn.Module):

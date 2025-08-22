@@ -10,7 +10,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from tqdm import tqdm
 import os
 import time
-from utils import SeamDatasetSimple, SeamRegressor, SeamRegressorTiny
+from utils import SeamDatasetSimple, SeamRegressor, SeamRegressorTiny, SeamRegressorTIMM
 
 
 # ShuffleNet, linear, 0.0113, SmoothL1Loss
@@ -19,9 +19,24 @@ from utils import SeamDatasetSimple, SeamRegressor, SeamRegressorTiny
 # ShuffleNet, linear, 0.0052, RMSE Loss, without 9 and 10
 # ShuffleNet, sigmoid, 0.0089, RMSE Loss, without 9 and 10
 # ShuffleNet, sigmoid, 0.012, RMSE Loss + cls loss
+# ShuffleNet, linear, 0.0111, RMSE Loss + cls loss, 640x640, bs26
+# ShuffleNet, linear, 0.0103, RMSE Loss + cls loss, 480x480, bs58
+# ShuffleNet, linear, 0.0115, RMSE Loss + cls loss, 320x320, bs130
+# ShuffleNet, linear, 0.0164, RMSE Loss + cls loss, 160x160, 128
+# timm/mobilenetv3_small_050.lamb_in1k, linear, 0.0228, RMSE Loss + cls loss, 160x160, 128
+# timm/mobilenetv3_small_100.lamb_in1k, linear, 0.0114, RMSE Loss + cls loss, 160x160, 128 - 1.8 pix
+# timm/mobilenetv3_large_100.ra_in1k, linear, 0.0122, RMSE Loss + cls loss, 160x160, 128
+# timm/vit_tiny_patch16_224.augreg_in21k_ft_in1k, linear, 0.0192, RMSE Loss + cls loss, 224x224, 128
+# timm/mobilenetv4_conv_small.e1200_r224_in1k, linear, 0.0109, RMSE Loss + cls loss, 224x224, 128 - 2.4 pix
+# timm/mobilenetv4_conv_small.e1200_r224_in1k, linear, 0.0102, RMSE Loss + cls loss, 160x160, 128 - 1.6 pix
 
+# timm/efficientvit_m4.r224_in1k, linear, 0.0346, RMSE Loss + cls loss, 224x224, 128
+# timm/efficientvit_m0.r224_in1k, linear, 0.0622, RMSE Loss + cls loss, 224x224, 128
+# timm/tinynet_e.in1k, linear, 0.0270, RMSE Loss + cls loss, 224x224, 128
+# timm/tinynet_e.in1k, linear, 0.0133, RMSE Loss + cls loss, 160x160, 128
+# timm/lcnet_100.ra2_in1k, linear, 0.0105, RMSE Loss + cls loss, 160x160, 128
+# timm/levit_128s.fb_dist_in1k, linear, 0.1235, RMSE Loss + cls loss, 224x224, 128
 
-    
 
 def build_dss(data_dir: str) -> Tuple[ConcatDataset, ConcatDataset]:
     dirs = [f"{data_dir}/{d}" for d in os.listdir(data_dir)]
@@ -36,10 +51,11 @@ def build_dss(data_dir: str) -> Tuple[ConcatDataset, ConcatDataset]:
 
 
 if __name__ == '__main__':
-    EPOCHS = 30
-    BS = 16
+    EPOCHS = 90
+    BS = 128
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = SeamRegressor(in_channels=1, out_channels=3)
+    # model = SeamRegressor(in_channels=1, out_channels=3)
+    model = SeamRegressorTIMM(in_channels=1, out_channels=3)
     # model = SeamRegressorTiny(720, 720)
     model.to(device)
     train_ds, val_ds = build_dss('data')
@@ -54,7 +70,7 @@ if __name__ == '__main__':
     val_dl = DataLoader(val_ds, batch_size=BS, shuffle=False)
     train_loss = nn.MSELoss()
     train_loss_clf = nn.BCEWithLogitsLoss()
-    optimizer = Adam(model.parameters())
+    optimizer = Adam(model.parameters(), lr=0.001)
     best_rmse = 1
 
     for epoch in range(EPOCHS):
@@ -83,9 +99,6 @@ if __name__ == '__main__':
         
         total_loss = total_loss / (i + 1)
         total_loss_clf = total_loss_clf / (i + 1)
-        if total_loss < best_rmse:
-            best_rmse = total_loss
-            torch.save(model.state_dict(), 'best_score.pt')
         model.eval()
         total_val_loss = 0
         total_preds = []
@@ -105,10 +118,17 @@ if __name__ == '__main__':
                 # loss = torch.sqrt(val_loss(y_pred, y_val))
                 total_val_loss += loss.item()
         total_val_loss /= (i + 1)
+
+        if total_val_loss < best_rmse:
+            best_rmse = total_val_loss
+            torch.save(model.state_dict(), 'best_score.pt')
+
         print(f"TRAIN REG LOSS: {total_loss:.4f}")
         print(f"TRAIN CLF LOSS: {total_loss_clf:.4f}")
         print(f"VAL RMSE: {total_val_loss:.4f}")
         total_preds = (np.concatenate(total_preds) > 0.5).astype(int)
         total_true = np.concatenate(total_true)
-        f1, pr, rec, _ = precision_recall_fscore_support(total_true, total_preds, average='binary')
+        pr, rec, f1, _ = precision_recall_fscore_support(total_true, total_preds, average='binary')
         print(f"F1-score: {f1}\nPrecision: {pr}\nRecall: {rec}")
+
+    print(f"Best val RMSE: {best_rmse:.4f}")
