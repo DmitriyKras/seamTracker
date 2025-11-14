@@ -4,7 +4,7 @@ import os
 from tqdm import tqdm
 
 
-dirs = [f"data/{d}" for d in os.listdir('data')]
+dirs = [f"new_data/{d}" for d in os.listdir('new_data')]
 gt = np.concatenate([np.load(f"{d}/true.npy") for d in dirs]) * 720
 preds = np.concatenate([np.load(f"{d}/preds.npy") for d in dirs]) * 720
 
@@ -80,8 +80,8 @@ class OneEuroFilter:
 
 for d in dirs:
     print(d)
-    gt = np.load(f"{d}/true.npy") * 720
-    preds = np.load(f"{d}/preds.npy") * 720
+    gt = np.load(f"{d}/true.npy") * np.array((1024, 2448))
+    preds = np.load(f"{d}/preds.npy") * np.array((1024, 2448))
     # filtered = [preds[0]]
     # one_euro_x = OneEuroFilter(1 / 40, preds[0, 0])
     # one_euro_y = OneEuroFilter(1 / 40, preds[0, 1])
@@ -100,9 +100,11 @@ for d in dirs:
     plt.scatter(np.arange(0, preds.shape[0]), preds[:,0], s=1)
     plt.savefig(f'figures/{d[-1]}_gt_pred_x.png', dpi=600)
     plt.figure()
-    plt.plot(gt[:,1], 'b')
-    plt.plot(filtered[:,1], 'r')
-    plt.scatter(np.arange(0, preds.shape[0]), preds[:,1], s=1)
+    plt.plot(gt[:,1], 'b', label='real trajectory')
+    # plt.plot(filtered[:,1], 'r')
+    # plt.scatter(np.arange(0, preds.shape[0]), preds[:,1], s=1, )
+    plt.plot(np.arange(0, preds.shape[0]), preds[:,1], label='predicted trajectory', color='r')
+    plt.legend()
     plt.savefig(f'figures/{d[-1]}_gt_pred_y.png', dpi=600)
     # error = np.sqrt(np.square(preds - gt[4:-4]).sum(-1)).mean()
     # print(f"RMSE after filter {error}")

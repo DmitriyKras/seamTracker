@@ -10,7 +10,7 @@ from sklearn.metrics import precision_recall_fscore_support
 from tqdm import tqdm
 import os
 import time
-from utils import SeamDatasetSimple, SeamRegressorTIMM
+from utils import SeamDataset3D, SeamRegressorTIMM, resnet3d
 
 
 # timm/efficientvit_m4.r224_in1k, linear, 0.0346, RMSE Loss + cls loss, 224x224, 128
@@ -31,28 +31,27 @@ def build_dss(data_dir: str, input_shape) -> Tuple[ConcatDataset, ConcatDataset]
     dirs = [f"{data_dir}/{d}" for d in os.listdir(data_dir)]
     # train, val = train_test_split(dirs, test_size=0.2, random_state=42)
     val = [f"{data_dir}/{d}" for d in os.listdir(data_dir) if d in ('3', '5', '6')]
-    # train = [d for d in dirs if d not in val]
-    train = [d for d in dirs]
+    train = [d for d in dirs if d not in val]
+    # train = [d for d in dirs]
     print(train, val)
     train = ConcatDataset([
-        SeamDatasetSimple(d, input_shape) for d in train
+        SeamDataset3D(d, input_shape) for d in train
     ])
     val = ConcatDataset([
-        SeamDatasetSimple(d, input_shape) for d in val
+        SeamDataset3D(d, input_shape) for d in val
     ])
     return train, val
 
 
 if __name__ == '__main__':
-    EPOCHS = 200
-    BS = 16
+    EPOCHS = 100
+    BS = 32
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
-    # model = SeamRegressor(in_channels=1, out_channels=3)
-    model = SeamRegressorTIMM(in_channels=1, out_channels=3)
-    # model = SeamRegressorTiny(720, 720)
+    model = SeamRegressorTIMM(in_channels=4, out_channels=3)
+    # model = resnet3d('resnet18')
     model.to(device)
-    train_ds, val_ds = build_dss('new_data', (640, 1536))
+    train_ds, val_ds = build_dss('new_data', (160, 384))
     
     # import cv2
     # img, pt = val_ds[1110]
@@ -66,6 +65,7 @@ if __name__ == '__main__':
     train_loss_clf = nn.BCEWithLogitsLoss()
     optimizer = Adam(model.parameters(), lr=0.0001)
     best_rmse = 1
+    scaler = torch.amp.GradScaler()
 
     for epoch in range(EPOCHS):
         model.train()  # set model to training mode
@@ -77,16 +77,19 @@ if __name__ == '__main__':
                 X_train, y_train = X_train.to(device), y_train.to(device)  # get data
                 # print(X_train.size())
                 # print(y_train.size())
-                y_pred = model(X_train)  # get predictions
-                y_train_cls = torch.all(y_train < 1, dim=-1)
+                with torch.autocast('cuda', torch.float16):
+                    y_pred = model(X_train)  # get predictions
+                    y_train_cls = torch.all(y_train < 1, dim=-1)
 
-                # loss_reg = torch.sqrt(train_loss(y_pred[:, :2], y_train))
-                loss_reg = train_loss(y_pred[:, :2], y_train)
-                loss_clf = train_loss_clf(y_pred[:, 2], y_train_cls.float())
-                loss = loss_reg + 0.1*loss_clf
+                    # loss_reg = torch.sqrt(train_loss(y_pred[:, :2], y_train))
+                    loss_reg = train_loss(y_pred[:, :2], y_train)
+                    loss_clf = train_loss_clf(y_pred[:, 2], y_train_cls.float())
+                    loss = loss_reg + 0.1*loss_clf
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad()
-                loss.backward()  # back propogation
-                optimizer.step()  # optimizer's step
                 total_loss += loss_reg.item()
                 total_loss_clf += loss_clf.item()
                 tepoch.set_postfix(loss=total_loss / (i + 1))
@@ -103,14 +106,15 @@ if __name__ == '__main__':
             for i, (X_val, y_val) in enumerate(tepoch):
                 tepoch.set_description(f"EPOCH {epoch + 1}/{EPOCHS} VALIDATING")
                 X_val, y_val = X_val.to(device), y_val.to(device)  # get data
-                with torch.no_grad():
+                with torch.autocast('cuda', torch.float16), torch.no_grad():
                     y_pred = model(X_val)  # get predictions
-
-                y_val_cls = torch.all(y_val < 1, dim=-1)
+                    y_val_cls = torch.all(y_val < 1, dim=-1)
+                    loss = torch.sqrt(torch.square(y_pred[:, :2] - y_val).sum(dim=-1)).mean()
+                    
                 total_preds.append(F.sigmoid(y_pred[:, 2]).cpu().numpy())
                 total_true.append(y_val_cls.cpu().numpy())
 
-                loss = torch.sqrt(torch.square(y_pred[:, :2] - y_val).sum(dim=-1)).mean()
+                
                 d = torch.abs(y_pred[:, :2] - y_val).mean(dim=0)
                 dx += d[0].item()
                 dy += d[1].item()

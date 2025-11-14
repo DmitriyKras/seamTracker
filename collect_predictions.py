@@ -2,21 +2,21 @@ import numpy as np
 import torch.nn.functional as F
 import torch
 from tqdm import tqdm
-from utils import SeamDatasetSimple, SeamRegressor
+from utils import SeamDatasetSimple, SeamRegressor, SeamRegressorTIMM
 import os
 from torch.utils.data import DataLoader
 
 
-dirs = [f"data/{d}" for d in os.listdir('data')]
+dirs = [f"new_data/{d}" for d in os.listdir('new_data')]
 
-model = SeamRegressor(1, 3)
+model = SeamRegressorTIMM(1, 3)
 model.load_state_dict(torch.load('best_score.pt'))
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model.to(device)
 
 
 for d in dirs:
-    ds = SeamDatasetSimple(d)
+    ds = SeamDatasetSimple(d, (160, 1536))
     dl = DataLoader(ds, batch_size=64, shuffle=False)
     total_preds = []
     total_true = []

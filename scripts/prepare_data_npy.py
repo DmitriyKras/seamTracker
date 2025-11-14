@@ -4,12 +4,12 @@ from glob import glob
 import os
 from tqdm import tqdm
 
-DIR = 'data'
+DIR = 'new_data'
 dirs = [f"{DIR}/{d}" for d in os.listdir(DIR)]
 print(dirs)
 
 for d in tqdm(dirs, total=len(dirs)):
-    images = sorted(glob(f"{d}/0/*.pgm"))
+    images = sorted(glob(f"{d}/0/*.png"))
     gt = np.loadtxt(f"{d}/ground_truth.csv", delimiter=',').astype(int)
     id_start = gt[0, 0]
     id_end = gt[-1, 0]
